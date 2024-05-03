@@ -292,7 +292,7 @@ begin
 
 	commit;
 
-	--call pr_calculo_dre_previsto();
+	call pr_calculo_dre_previsto(date_trunc('month', current_date)::date);
 end;
 $$
 language plpgsql;
@@ -790,9 +790,132 @@ language plpgsql;
 
 -----------------------------------------------------------------------------------------------------------------
 
+create or replace procedure pr_calculo_dre_previsto(iPeriodo date) as 
+$$
+declare 
+	cEstrutura record;
+	cEmpresas record;
+	cAnaliticas record;
+	cDRE record;
+
+	vResultado varchar;
+	vAgrupadora varchar;
+	vAnalitica varchar;
+
+	nValor numeric;
+	nSoma numeric;
+begin
+	delete from fato_apuracao_dre fad where periodo = iPeriodo and previsto = 'S';
+	commit;
+
+	nSoma = 0;
+
+	-- primeiro passo: obter os lançamentos de DESPESA nas analíticas
+	for cEstrutura in select * from aux_estrutura_dre where operacao in ('-', '=') order by ordem loop
+		for cEmpresas in select * from dim_empresas where seq in (1, 2, 3) loop
+			for cAnaliticas in select (sum(valor_credito) + sum(valor_debito))*-1 as valor from fato_financeiro where date_trunc('month', data) = date_trunc('month', iPeriodo) /*and previsao = 'R'*/ and seq_conta_debito = cEstrutura.codigo and seq_empresa = cEmpresas.seq loop
+				if(cEstrutura.operacao = '=') then
+					/* resultado */
+					vResultado = cEstrutura.item;
+					vAnalitica = '';
+					vAgrupadora = '';
+				else
+					if(cEstrutura.operacao = '') then
+						/* agrupadora */ 
+						vResultado = '';
+						vAnalitica = '';
+						vAgrupadora = cEstrutura.item;
+					else
+						/* analitica*/
+						vResultado = '';
+						vAnalitica = cEstrutura.item;
+						vAgrupadora = '';
+					end if;
+				end if;
+			
+				if (cAnaliticas.valor is null) then
+					nValor = 0;
+				else
+					nValor = cAnaliticas.valor;
+				end if;
+			
+				insert into fato_apuracao_dre 
+				(empresa, periodo, codigo_conta, resultado, agrupadora, analitica, valor, operacao, ordem, previsto)
+				values
+				(cEmpresas.seq, iPeriodo, cEstrutura.codigo, vResultado, vAgrupadora, vAnalitica, nValor, cEstrutura.operacao, cEstrutura.ordem, 'S');
+			end loop;			
+		end loop;
+	end loop;
+	--
+	-- segundo passo: obter os lançamentos de RECEITA nas analíticas (contas de débito passam a ser as EMPRESAS)	
+	for cEstrutura in select * from aux_estrutura_dre where operacao in ('+') order by ordem loop
+		for cEmpresas in select * from dim_empresas where seq in (1, 2, 3) loop
+			-- receita das empresas ou outras receitas (p.ex.: rendimentos de aplicações financeiras)
+			for cAnaliticas in select (sum(valor_credito) + sum(valor_debito)) as valor from fato_financeiro where date_trunc('month', data) = date_trunc('month', iPeriodo) /*and previsao = 'R'*/ and (seq_conta_credito = cEstrutura.codigo or seq_conta_debito = cEstrutura.codigo) and seq_empresa = cEmpresas.seq loop
+				if (cAnaliticas.valor is null) then
+					nValor = 0;
+				else
+					nValor = cAnaliticas.valor;
+				end if;
+
+				insert into fato_apuracao_dre 
+				(empresa, periodo, codigo_conta, resultado, agrupadora, analitica, valor, operacao, ordem, previsto)
+				values
+				(cEmpresas.seq, iPeriodo, cEstrutura.codigo, null, null, cEstrutura.item, nValor, cEstrutura.operacao, cEstrutura.ordem, 'S');
+			end loop;		
+		end loop;	
+	end loop;
+	--
+	-- terceiro passo: totalizar as agrupadoras
+	for cEstrutura in select * from aux_estrutura_dre where operacao = '0' order by ordem loop 
+		for cEmpresas in select * from dim_empresas where seq in (1, 2, 3) loop	
+			for cAnaliticas in select sum(valor) as total from fato_apuracao_dre where empresa = cEmpresas.seq and codigo_conta in (select seq from dim_contas_ctb_debito where cod_agrupadora::integer = cEstrutura.codigo) loop 
+				insert into fato_apuracao_dre 
+				(empresa, periodo, codigo_conta, resultado, agrupadora, analitica, valor, operacao, ordem, previsto)
+				values
+				(cEmpresas.seq, iPeriodo, cEstrutura.codigo, null, cEstrutura.item, null, cAnaliticas.total, cEstrutura.operacao, cEstrutura.ordem, 'S');
+			end loop;			
+		end loop;		
+	end loop;
+	--
+	nSoma = 0;
+	--
+	-- quarto passo: calcular as contas de resultado
+	-- começando da primeira linha, soma-se (ou diminui-se) o valor até encontrar uma conta de resultado (operacao '=')
+	for cEmpresas in select * from dim_empresas where seq in (1, 2, 3) loop
+		nSoma = 0;
+	
+		for cDRE in select * from fato_apuracao_dre where periodo = iPeriodo and empresa = cEmpresas.seq order by empresa, ordem loop
+			if (cDRE.operacao = '=') then
+				/* encontrou uma conta de resultado - atualiza o valor */
+				update fato_apuracao_dre 
+				set		valor = nSoma
+				where 	periodo = iPeriodo
+				and 	codigo_conta = cDRE.codigo_conta
+				and 	empresa = cDRE.empresa
+				and 	operacao = cDRE.operacao
+				and 	ordem = cDRE.ordem
+				and 	previsto = 'S';
+			else
+				if (cDRE.operacao in ('+', '-')) then
+					nSoma = nSoma + cDRE.valor;
+				else
+					nSoma = nSoma;
+				end if;
+			end if;
+		end loop;
+	end loop;
+
+	commit;	
+end;
+$$
+language plpgsql;
+
+-----------------------------------------------------------------------------------------------------------------
+
 call pr_carga_dw();
 
 |-----------------------------------------------------------------------------------------------------------------
  
-select * from fato_apuracao_dre fad where periodo = '2024-05-01' and resultado = '(=) RESULTADO APÓS RENDIMENTOS FINANCEIROS';
+select * from fato_apuracao_dre fad where periodo = '2024-05-01' and resultado = '(=) RESULTADO APÓS RENDIMENTOS FINANCEIROS' and previsto = 'S';
 
