@@ -209,6 +209,7 @@ CREATE TABLE public.fato_apuracao_dre (
 	valor numeric NULL,				
 	operacao text NULL,				-- + (receitas) , - (despesas) ou = (resultados)  -- agrupadoras recebem 0 (zero)
 	ordem integer NULL,				-- ordem de acordo com a planilha de estrutura do DRE (ordem de exibição das contas no relatório)
+	previsto text DEFAULT 'N',		-- S ou N
 	CONSTRAINT fato_apuracao_dre_pk PRIMARY KEY (indice)
 );
 grant all on public.fato_apuracao_dre to public;
@@ -290,6 +291,8 @@ begin
 	end loop;
 
 	commit;
+
+	--call pr_calculo_dre_previsto();
 end;
 $$
 language plpgsql;
