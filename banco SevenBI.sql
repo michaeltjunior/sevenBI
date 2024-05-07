@@ -632,7 +632,7 @@ begin
 					vSaldoAtual = 'S';
 				end if;
 				
-				for y in select seq_empresa , seq_conta , sum(valor_credito) - sum(valor_debito) as variacao from fato_financeiro ff where seq_empresa = x.seq_empresa and seq_conta = x.seq and data = dDataSaldo and previsao = 'R' group by seq_empresa , seq_conta order by 1, 2 loop 			
+				for y in select seq_empresa , seq_conta , sum(valor_credito) - sum(abs(valor_debito)) as variacao from fato_financeiro ff where seq_empresa = x.seq_empresa and seq_conta = x.seq and data = dDataSaldo and previsao = 'R' group by seq_empresa , seq_conta order by 1, 2 loop 			
 					insert into aux_saldos_contas 
 					(seq_conta, data, saldo_inicial, saldo_final, saldo_atual)
 					values
@@ -813,7 +813,7 @@ begin
 	-- primeiro passo: obter os lançamentos de DESPESA nas analíticas
 	for cEstrutura in select * from aux_estrutura_dre where operacao in ('-', '=') order by ordem loop
 		for cEmpresas in select * from dim_empresas where seq in (1, 2, 3) loop
-			for cAnaliticas in select (sum(valor_credito) + sum(valor_debito))*-1 as valor from fato_financeiro where date_trunc('month', data) = date_trunc('month', iPeriodo) /*and previsao = 'R'*/ and seq_conta_debito = cEstrutura.codigo and seq_empresa = cEmpresas.seq loop
+			for cAnaliticas in select (sum(valor_credito) + sum(valor_debito))*-1 as valor from fato_financeiro where date_trunc('month', data) = date_trunc('month', iPeriodo) and previsao = 'P' and seq_conta_debito = cEstrutura.codigo and seq_empresa = cEmpresas.seq loop
 				if(cEstrutura.operacao = '=') then
 					/* resultado */
 					vResultado = cEstrutura.item;
@@ -851,7 +851,7 @@ begin
 	for cEstrutura in select * from aux_estrutura_dre where operacao in ('+') order by ordem loop
 		for cEmpresas in select * from dim_empresas where seq in (1, 2, 3) loop
 			-- receita das empresas ou outras receitas (p.ex.: rendimentos de aplicações financeiras)
-			for cAnaliticas in select (sum(valor_credito) + sum(valor_debito)) as valor from fato_financeiro where date_trunc('month', data) = date_trunc('month', iPeriodo) /*and previsao = 'R'*/ and (seq_conta_credito = cEstrutura.codigo or seq_conta_debito = cEstrutura.codigo) and seq_empresa = cEmpresas.seq loop
+			for cAnaliticas in select (sum(valor_credito) + sum(valor_debito)) as valor from fato_financeiro where date_trunc('month', data) = date_trunc('month', iPeriodo) and previsao = 'P' and (seq_conta_credito = cEstrutura.codigo or seq_conta_debito = cEstrutura.codigo) and seq_empresa = cEmpresas.seq loop
 				if (cAnaliticas.valor is null) then
 					nValor = 0;
 				else
@@ -915,7 +915,22 @@ language plpgsql;
 
 call pr_carga_dw();
 
-|-----------------------------------------------------------------------------------------------------------------
+-----------------------------------------------------------------------------------------------------------------
  
-select * from fato_apuracao_dre fad where periodo = '2024-05-01' and resultado = '(=) RESULTADO APÓS RENDIMENTOS FINANCEIROS' and previsto = 'S';
+select ff.seq_conta , ff."data" , sum(ff.valor_credito) - sum(abs(ff.valor_debito)) as variacao
+from fato_financeiro ff 
+where ff.seq_conta = 1 
+and ff.previsao = 'R'
+and data >= '2023-12-29'
+group by ff.seq_conta , ff."data"
+order by 2;
 
+-----------------------------------------------------------------------------------------------------------------
+
+select sum(valor_credito) - sum(valor_debito) from fato_financeiro ff where seq_conta = 1 and data = '2024-03-20' and previsao = 'R' order by "data" ;
+
+-----------------------------------------------------------------------------------------------------------------
+
+select * from imp_movimentos im where seq_conta = 1 and substr(data, 4) = '04/2024' and previsao = 'R' order by seq;
+select * from dim_contas dc ;
+select * from aux_saldos_contas asc2 where asc2.seq_conta = 7 order by "data" desc;
