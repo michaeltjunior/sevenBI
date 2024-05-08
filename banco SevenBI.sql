@@ -377,7 +377,7 @@ begin
 	update dim_contas set saldo_inicial = 0, data_inicio_saldo = '2023-01-01' where cod_conta = 'APL 20404-8';
 	update dim_contas set saldo_inicial = 0, data_inicio_saldo = '2023-01-01' where cod_conta = 'APL 218-0';
 	update dim_contas set saldo_inicial = 0, data_inicio_saldo = '2023-01-01' where cod_conta = 'APL 191-4 Flex';
-	update dim_contas set saldo_inicial = 0, data_inicio_saldo = '2023-01-01' where cod_conta = 'COFRE';
+	update dim_contas set saldo_inicial = 28.87, data_inicio_saldo = '2023-01-01' where cod_conta = 'COFRE';
 	update dim_contas set saldo_inicial = 0, data_inicio_saldo = '2023-01-01' where cod_conta = 'Carteira';
 	update dim_contas set saldo_inicial = 0, data_inicio_saldo = '2023-01-01' where cod_conta = '20165-8 Poupança';
 
@@ -933,4 +933,4 @@ select sum(valor_credito) - sum(valor_debito) from fato_financeiro ff where seq_
 
 select * from imp_movimentos im where seq_conta = 1 and substr(data, 4) = '04/2024' and previsao = 'R' order by seq;
 select * from dim_contas dc ;
-select * from aux_saldos_contas asc2 where asc2.seq_conta = 7 order by "data" desc;
+select * from aux_saldos_contas asc2 where asc2.seq_conta = 10 order by "data" desc;
