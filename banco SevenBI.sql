@@ -14,7 +14,13 @@ create sequence fato_financeiro_seq;
 create sequence aux_estrutura_dre_seq;
 create sequence fato_apuracao_dre_seq;
 create sequence dim_clientes_seq;
+create sequence fato_compras_seq;
+create sequence dim_pedidos_seq;
+create sequence dim_recebimentos_seq;
 
+alter sequence fato_compras_seq restart with 1;
+alter sequence dim_pedidos_seq restart with 1;
+alter sequence dim_recebimentos_seq restart with 1;
 alter sequence aux_saldos_contas_seq restart with 1;
 alter sequence dim_contas_seq restart with 1;
 alter sequence dim_empresas_seq restart with 1;
@@ -214,6 +220,44 @@ CREATE TABLE public.fato_apuracao_dre (
 );
 grant all on public.fato_apuracao_dre to public;
 
+create table public.fato_compras
+(indice integer default nextval('fato_compras_seq'),
+seq integer, 					-- sequencia original da ORDEM DE COMPRA
+seq_pedido integer, 			-- FK para a coluna INDICE da DIM_PEDIDOS
+data_pedido date,
+valor_pedido numeric,
+desconto numeric,
+situacao text default 'AGUARDANDO',  				-- AGUARDANDO, ATENDIDA, ATENDIDA PARCIALMENTE, CANCELADA, ATRASADA
+CONSTRAINT fato_compras_pk PRIMARY KEY (indice)
+);
+grant all on public.fato_compras to public;
+
+create table public.dim_pedidos
+(indice integer default nextval('dim_pedidos_seq'),
+seq integer, 				-- sequencia original da tabela de PEDIDOS de compras (se aplicável)
+data_cotacao date,
+data_pedido date,
+seq_fornecedor integer,
+seq_item integer,
+codigo_item text,
+descricao_item text,
+valor_unitario numeric,
+quantidade numeric,
+unidade_medida text,
+desconto_item numeric,
+CONSTRAINT dim_pedidos_pk PRIMARY KEY (indice)
+);
+grant all on public.dim_pedidos to public;
+
+create table public.dim_recebimentos
+(indice integer default nextval('dim_recebimentos_seq'),
+seq_compra integer,				-- referência para a coluna INDICE na FATO_COMPRAS (que referncia também o item sendo recebido pois a chave é composta: SEQ_COMPRA + SEQ_ITEM)
+data_recebimento date,
+situacao text default 'AGUARDANDO',					-- AGUARDANDO, RECEBIDO, RECEBIDO PARCIALMENTE, REJEITADO
+CONSTRAINT dim_recebimentos_pk PRIMARY KEY (indice)
+);
+grant all on public.dim_recebimentos to public;
+
 -----------------------------------------------------------------------------------------------------------------
 --                             **   DEFINIÇÃO DOS PROCESSOS DE IMPORTAÇÃO   **                                 --
 --                                                                                                             --
@@ -225,6 +269,7 @@ grant all on public.fato_apuracao_dre to public;
 -- W&F Premissa 5: movimentos A PAGAR deverão gerar uma linha na FATO_FATURAMENTO                              --
 -- W&F Premissa 6: somente notas fiscais NÃO CANCELADAS                                                        --
 -- W&F Premissa 7: inicialmente o DRE deve considerar apenas os movimentos já REALIZADOS 			  	       --
+-- W&F Premissa 8: registros de COMPRAS serão por planilha, por não existir sistema de controle 			   --
 --                                                                                                             --   
 -----------------------------------------------------------------------------------------------------------------
 
@@ -243,6 +288,9 @@ begin
 	delete from dim_contas_ctb_credito;
 	delete from dim_agrupadoras;
 	delete from dim_clientes;
+	delete from dim_recebimentos;
+	delete from dim_pedidos;
+	delete from fato_compras;
 
 	alter sequence aux_saldos_contas_seq restart with 1;
 	alter sequence dim_contas_seq restart with 1;
@@ -256,6 +304,9 @@ begin
 	alter sequence aux_estrutura_dre_seq restart with 1;
 	alter sequence fato_apuracao_dre_seq restart with 1;
 	alter sequence dim_clientes_seq restart with 1;
+	alter sequence fato_compras_seq restart with 1;
+	alter sequence dim_pedidos_seq restart with 1;
+	alter sequence dim_recebimentos_seq restart with 1;
 
 	commit;
 end;
@@ -280,6 +331,9 @@ begin
 	call public.pr_carga_fato_faturamento('R');
 	call public.pr_carga_fato_financeiro();
 	call public.pr_carga_fato_faturamento('P');
+--	call public.pr_carga_pedidos();
+--	call public.pr_carga_compras();
+--	call public.pr_carga_recebimentos();
 	call public.pr_carga_saldos();
 
 	dDataDRE = date_trunc('month', current_date) - interval '6 month'; 
@@ -525,6 +579,7 @@ begin
 	
 	else
 		-- CONTAS A PAGAR ?
+		-- módulo de COMPRAS
 		null;
 	end if;
 
@@ -917,20 +972,3 @@ call pr_carga_dw();
 
 -----------------------------------------------------------------------------------------------------------------
  
-select ff.seq_conta , ff."data" , sum(ff.valor_credito) - sum(abs(ff.valor_debito)) as variacao
-from fato_financeiro ff 
-where ff.seq_conta = 1 
-and ff.previsao = 'R'
-and data >= '2023-12-29'
-group by ff.seq_conta , ff."data"
-order by 2;
-
------------------------------------------------------------------------------------------------------------------
-
-select sum(valor_credito) - sum(valor_debito) from fato_financeiro ff where seq_conta = 1 and data = '2024-03-20' and previsao = 'R' order by "data" ;
-
------------------------------------------------------------------------------------------------------------------
-
-select * from imp_movimentos im where seq_conta = 1 and substr(data, 4) = '04/2024' and previsao = 'R' order by seq;
-select * from dim_contas dc ;
-select * from aux_saldos_contas asc2 where asc2.seq_conta = 10 order by "data" desc;
