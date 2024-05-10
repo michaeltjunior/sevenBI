@@ -972,3 +972,5 @@ call pr_carga_dw();
 
 -----------------------------------------------------------------------------------------------------------------
  
+select * from imp_compras_cotacao;
+select * from imp_compras_itens_cotacao;
