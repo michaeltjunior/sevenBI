@@ -1,3 +1,4 @@
+
 -----------------------------------------------------------------------------------------------------------------
 --                                      **   MODELAGEM DA BASE DO BI   **                                      --
 -----------------------------------------------------------------------------------------------------------------
@@ -227,17 +228,18 @@ seq_pedido integer, 			-- FK para a coluna INDICE da DIM_PEDIDOS
 data_pedido date,
 valor_pedido numeric,
 desconto numeric,
-situacao text default 'AGUARDANDO',  				-- AGUARDANDO, ATENDIDA, ATENDIDA PARCIALMENTE, CANCELADA, ATRASADA
+situacao text default 'AGUARDANDO',  		-- AGUARDANDO, ATENDIDA, ATENDIDA PARCIALMENTE, CANCELADA, ATRASADA
 CONSTRAINT fato_compras_pk PRIMARY KEY (indice)
 );
 grant all on public.fato_compras to public;
 
 create table public.dim_pedidos
 (indice integer default nextval('dim_pedidos_seq'),
-seq integer, 				-- sequencia original da tabela de PEDIDOS de compras (se aplicável)
+seq integer, 								-- sequencia original da tabela de PEDIDOS de compras (se aplicável)
 data_cotacao date,
 data_pedido date,
 seq_fornecedor integer,
+nome_fornecedor text,
 seq_item integer,
 codigo_item text,
 descricao_item text,
@@ -251,9 +253,9 @@ grant all on public.dim_pedidos to public;
 
 create table public.dim_recebimentos
 (indice integer default nextval('dim_recebimentos_seq'),
-seq_compra integer,				-- referência para a coluna INDICE na FATO_COMPRAS (que referncia também o item sendo recebido pois a chave é composta: SEQ_COMPRA + SEQ_ITEM)
+seq_compra integer,							-- referência para a coluna INDICE na FATO_COMPRAS (que referncia também o item sendo recebido pois a chave é composta: SEQ_COMPRA + SEQ_ITEM)
 data_recebimento date,
-situacao text default 'AGUARDANDO',					-- AGUARDANDO, RECEBIDO, RECEBIDO PARCIALMENTE, REJEITADO
+situacao text default 'AGUARDANDO',			-- AGUARDANDO, RECEBIDO, RECEBIDO PARCIALMENTE, DEVOLVIDO
 CONSTRAINT dim_recebimentos_pk PRIMARY KEY (indice)
 );
 grant all on public.dim_recebimentos to public;
@@ -331,7 +333,7 @@ begin
 	call public.pr_carga_fato_faturamento('R');
 	call public.pr_carga_fato_financeiro();
 	call public.pr_carga_fato_faturamento('P');
---	call public.pr_carga_pedidos();
+	call public.pr_carga_pedidos();
 --	call public.pr_carga_compras();
 --	call public.pr_carga_recebimentos();
 	call public.pr_carga_saldos();
@@ -968,9 +970,30 @@ language plpgsql;
 
 -----------------------------------------------------------------------------------------------------------------
 
+create or replace procedure public.pr_carga_pedidos() as
+$$
+declare
+	x record;
+begin
+	for x in select ip.seq , icc."data" as data_cotacao , ip.data_pedido , icc.seq_fornecedor , icc.nome_fornecedor , iip.seq_item , null as codigo_item , iip.descricao_item , iip.valor_unitario , iip.quantidade , iip.desconto , null as unidade_medida 
+				from imp_pedidos ip , imp_itens_pedidos iip , imp_compras_cotacao icc  
+				where ip.seq = iip.seq_pedido 
+				and icc.seq_cotacao = ip.seq_cotacao
+	loop 
+		insert into dim_pedidos 
+		(seq , data_cotacao , data_pedido ,seq_fornecedor ,nome_fornecedor , seq_item ,codigo_item , descricao_item , valor_unitario , quantidade , unidade_medida, desconto_item )
+		values
+		(x.seq , x.data_cotacao , x.data_pedido , x.seq_fornecedor , x.nome_fornecedor , x.seq_item , x.codigo_item , x.descricao_item , x.valor_unitario , x.quantidade , x.unidade_medida, x.desconto);
+	end loop;
+
+	commit;
+end;
+$$
+language plpgsql;
+
+-----------------------------------------------------------------------------------------------------------------
+
 call pr_carga_dw();
 
 -----------------------------------------------------------------------------------------------------------------
  
-select * from imp_compras_cotacao;
-select * from imp_compras_itens_cotacao;

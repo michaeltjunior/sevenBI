@@ -63,6 +63,7 @@ def importa_cotacoes(engDestino):
                'seq_cotacao': sqlalchemy.types.INTEGER(),
                'data': sqlalchemy.types.DATE(),
                'seq_fornecedor': sqlalchemy.types.INTEGER(),
+               'nome_fornecedor': sqlalchemy.types.VARCHAR(length=100),
                'previsao_entrega': sqlalchemy.types.DATE(),
                'situacao': sqlalchemy.types.VARCHAR(length=20)})
 
