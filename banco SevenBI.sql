@@ -247,6 +247,7 @@ valor_unitario numeric,
 quantidade numeric,
 unidade_medida text,
 desconto_item numeric,
+situacao text,
 CONSTRAINT dim_pedidos_pk PRIMARY KEY (indice)
 );
 grant all on public.dim_pedidos to public;
@@ -317,7 +318,7 @@ language plpgsql;
 
 -----------------------------------------------------------------------------------------------------------------
 
-create or replace procedure pr_carga_dw()
+create or replace procedure public.pr_carga_dw()
 as
 $$
 declare 
@@ -334,8 +335,8 @@ begin
 	call public.pr_carga_fato_financeiro();
 	call public.pr_carga_fato_faturamento('P');
 	call public.pr_carga_pedidos();
---	call public.pr_carga_compras();
---	call public.pr_carga_recebimentos();
+	call public.pr_carga_fato_compras();
+	call public.pr_carga_recebimentos();
 	call public.pr_carga_saldos();
 
 	dDataDRE = date_trunc('month', current_date) - interval '6 month'; 
@@ -975,17 +976,58 @@ $$
 declare
 	x record;
 begin
-	for x in select ip.seq , icc."data" as data_cotacao , ip.data_pedido , icc.seq_fornecedor , icc.nome_fornecedor , iip.seq_item , null as codigo_item , iip.descricao_item , iip.valor_unitario , iip.quantidade , iip.desconto , null as unidade_medida 
+	for x in select ip.seq , icc."data" as data_cotacao , ip.data_pedido , icc.seq_fornecedor , icc.nome_fornecedor , iip.seq_item , null as codigo_item , iip.descricao_item , iip.valor_unitario , iip.quantidade , iip.desconto , null as unidade_medida , ip.situacao 
 				from imp_pedidos ip , imp_itens_pedidos iip , imp_compras_cotacao icc  
 				where ip.seq = iip.seq_pedido 
 				and icc.seq_cotacao = ip.seq_cotacao
 	loop 
-		insert into dim_pedidos 
-		(seq , data_cotacao , data_pedido ,seq_fornecedor ,nome_fornecedor , seq_item ,codigo_item , descricao_item , valor_unitario , quantidade , unidade_medida, desconto_item )
+		insert into public.dim_pedidos 
+		(seq , data_cotacao , data_pedido ,seq_fornecedor ,nome_fornecedor , seq_item ,codigo_item , descricao_item , valor_unitario , quantidade , unidade_medida, desconto_item , situacao)
 		values
-		(x.seq , x.data_cotacao , x.data_pedido , x.seq_fornecedor , x.nome_fornecedor , x.seq_item , x.codigo_item , x.descricao_item , x.valor_unitario , x.quantidade , x.unidade_medida, x.desconto);
+		(x.seq , x.data_cotacao , x.data_pedido , x.seq_fornecedor , x.nome_fornecedor , x.seq_item , x.codigo_item , x.descricao_item , x.valor_unitario , x.quantidade , x.unidade_medida, x.desconto, x.situacao);
 	end loop;
 
+	commit;
+end;
+$$
+language plpgsql;
+
+-----------------------------------------------------------------------------------------------------------------
+
+create or replace procedure public.pr_carga_fato_compras() as 
+$$
+declare 
+	x record;
+begin 
+	for x in select null as seq_ordem_compra , dp.seq as seq_pedido, dp.data_pedido , sum(dp.valor_unitario * dp.quantidade)  as valor_pedido , sum(dp.desconto_item) as desconto , dp.situacao 
+				from dim_pedidos dp 
+				group by dp.seq , dp.data_pedido , dp.situacao 
+	loop 
+		insert into public.fato_compras
+		(seq, seq_pedido, data_pedido , valor_pedido , desconto, situacao)
+		values
+		(x.seq_ordem_compra::integer  , x.seq_pedido, x.data_pedido, x.valor_pedido, x.desconto, x.situacao);
+	end loop;
+	
+	commit;
+end;
+$$
+language plpgsql;
+
+-----------------------------------------------------------------------------------------------------------------
+
+create or replace procedure public.pr_carga_recebimentos() as 
+$$
+declare
+	x record;
+begin 
+	for x in select seq, data_recebimento , situacao from imp_pedidos ip loop
+		insert into public.dim_recebimentos 
+		(seq_compra, data_recebimento, situacao)
+		values
+		(x.seq, x.data_recebimento, x.situacao);
+	end loop;
+	
 	commit;
 end;
 $$
@@ -996,4 +1038,4 @@ language plpgsql;
 call pr_carga_dw();
 
 -----------------------------------------------------------------------------------------------------------------
- 
+
